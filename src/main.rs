@@ -15,16 +15,17 @@ mod day {
 }
 
 fn main() {
-    let day_number = 2;
+    let day_number = 3;
 
     let day: &dyn Day = match day_number {
         1 => &day_01::Day01{},
         2 => &day_02::Day02{},
+        3 => &day_03::Day03{},
         _ => unreachable!(),
     };
 
     let input_filename = format!("input/day_{:02}.txt", day_number);
-    // let input_filename = "input/day_02_sample.txt";
+    // let input_filename = "input/day_03_sample.txt";
 
     let input = std::fs::read_to_string(&input_filename).unwrap();
 
@@ -190,6 +191,119 @@ mod day_02 {
                         });
                     mins.values().product::<i32>()
                 }).sum();
+
+            Box::new(answer)
+        }
+    }
+}
+mod day_03 {
+    use std::collections::{HashMap, HashSet};
+    use std::fmt::Display;
+    use crate::day::{Day, Solution};
+
+    pub struct Day03;
+
+    struct Input {
+        // numbers and their adjacent characters
+        numbers: Vec<(i32, HashSet<((i32, i32), char)>)>
+    }
+
+    impl Day for Day03 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let input: HashMap<(i32, i32), char> = input.lines()
+                .enumerate()
+                .flat_map(|(y, line)|
+                    line.chars()
+                        .enumerate()
+                        .map(move |(x, c)| ((x as i32, y as i32), c))
+                )
+                .collect();
+
+            let x_max = input.keys().max_by_key(|p| p.0).unwrap().0;
+            let y_max = input.keys().max_by_key(|p| p.1).unwrap().1;
+
+            let mut adjacent_symbols: HashMap<(i32, i32), HashSet<((i32, i32), char)>> = HashMap::new();
+            input.iter().for_each(|(&(x, y), &c)|
+                    if (c < '0' || c > '9') && c != '.' {
+                        vec![
+                            (x - 1 ,y - 1),
+                            (x - 1, y    ),
+                            (x - 1, y + 1),
+                            (x     ,y - 1),
+                            (x    , y + 1),
+                            (x + 1 ,y - 1),
+                            (x + 1, y    ),
+                            (x + 1, y + 1)
+                        ].iter().for_each(|coord| {
+                            let e = adjacent_symbols.entry(*coord).or_insert_with(|| HashSet::new());
+                            e.insert(((x, y), c));
+                        })
+                    }
+                );
+
+            let mut numbers = vec![];
+
+            let mut running: Option<i32> = None;
+            let mut adjacents: Option<HashSet<((i32, i32), char)>> = None;
+
+            let empty_set = HashSet::new();
+
+            for y in 0..=y_max {
+                for x in 0..=x_max {
+                    let c = *input.get(&(x, y)).unwrap();
+                    match c {
+                        '0' ..= '9' => {
+                            adjacents = Some(adjacents.unwrap_or_else(|| HashSet::new()));
+                            adjacents.as_mut().unwrap().extend(adjacent_symbols.get(&(x, y)).unwrap_or_else(|| &empty_set));
+                            running = Some(running.unwrap_or(0) * 10 + c as i32 - '0' as i32);
+                        }
+                        _ => {
+                            if running.is_some() {
+                                numbers.push((running.unwrap(), adjacents.clone().unwrap()));
+                            }
+                            running = None;
+                            adjacents = None;
+                        }
+                    }
+                }
+                if running.is_some() {
+                    numbers.push((running.unwrap(), adjacents.clone().unwrap()));
+                }
+                running = None;
+                adjacents = None;
+            }
+
+            Box::new(Input {
+                numbers
+            })
+        }
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let answer: i32 = self.numbers.iter()
+                .filter(|(_, symbols)| symbols.len() > 0)
+                .map(|(num, _)| num)
+                .sum();
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let mut gears: HashMap::<(i32, i32), Vec<i32>> = HashMap::new();
+
+            self.numbers.iter()
+                .flat_map(|(num, adjacents)|
+                    adjacents.into_iter().map(move |(coord, _)| (num, coord)))
+                .for_each(|(num, coord)| {
+                    let nums = gears.entry(*coord).or_insert(vec![]);
+                    nums.push(*num);
+                });
+
+            let answer: i32 = gears.into_iter()
+                .filter(|(_, nums)| nums.len() == 2)
+                .map(|(_, nums)| nums.iter().product::<i32>())
+                .sum();
 
             Box::new(answer)
         }
