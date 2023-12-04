@@ -15,17 +15,18 @@ mod day {
 }
 
 fn main() {
-    let day_number = 3;
+    let day_number = 4;
 
     let day: &dyn Day = match day_number {
         1 => &day_01::Day01{},
         2 => &day_02::Day02{},
         3 => &day_03::Day03{},
+        4 => &day_04::Day04{},
         _ => unreachable!(),
     };
 
     let input_filename = format!("input/day_{:02}.txt", day_number);
-    // let input_filename = "input/day_03_sample.txt";
+    // let input_filename = "input/day_04_sample.txt";
 
     let input = std::fs::read_to_string(&input_filename).unwrap();
 
@@ -304,6 +305,94 @@ mod day_03 {
                 .filter(|(_, nums)| nums.len() == 2)
                 .map(|(_, nums)| nums.iter().product::<i32>())
                 .sum();
+
+            Box::new(answer)
+        }
+    }
+}
+
+mod day_04 {
+    use std::collections::{HashMap, HashSet};
+    use std::fmt::Display;
+    use regex::Regex;
+    use crate::day::{Day, Solution};
+
+    pub struct Day04;
+
+    struct Input {
+        // numbers and their adjacent characters
+        input: Vec<(i32, HashSet<i32>, Vec<i32>)>,
+    }
+
+    impl Day for Day04 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let regex = Regex::new("^Card *([0-9]*): ([^|]*)\\|(.*)$").unwrap();
+
+            let input = input.lines()
+                .map(|line| {
+                    let captures = regex.captures(line).unwrap();
+
+                    let id = captures.get(1).unwrap().as_str().parse().unwrap();
+                    let winners: Vec<i32> = captures.get(2).unwrap().as_str()
+                        .split(' ')
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.parse().unwrap())
+                        .collect();
+                    let ours: Vec<i32> = captures.get(3).unwrap().as_str()
+                        .split(' ')
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.parse().unwrap())
+                        .collect();
+
+                    (
+                        id,
+                        HashSet::from_iter(winners),
+                        ours
+                    )
+                }).collect();
+
+            Box::new(Input {
+                input
+            })
+        }
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let answer: i32 = self.input.iter()
+                .map(|(_id, winners, ours)| {
+                    let matches = ours.iter().filter(|n| winners.contains(n)).count();
+                    if matches > 0 { 2i32.pow(matches as u32 - 1) } else { 0 }
+                }).sum();
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let winnings_per_card: HashMap<i32, Vec<i32>> = self.input.iter()
+                .map(|(id, winners, ours)| {
+                    let matches = ours.iter().filter(|n| winners.contains(n)).count();
+                    let winnings = (1..=matches).into_iter()
+                        .map(|i| id + i as i32)
+                        .collect();
+                    (*id, winnings)
+                }).collect();
+
+            let mut total_cards: HashMap<i32, i32> = self.input.iter()
+                .map(|(id, _, _)| (*id, 1))
+                .collect();
+
+            for i in 1..=self.input.last().unwrap().0 {
+                let n = *total_cards.get(&i).unwrap_or(&0);
+                let winnings = winnings_per_card.get(&i);
+                if let Some(winnings) = winnings {
+                    winnings.iter().for_each(|c| {
+                        *(total_cards.get_mut(c).unwrap()) += n;
+                    });
+                }
+            }
+
+            let answer: i32 = total_cards.values().sum();
 
             Box::new(answer)
         }
