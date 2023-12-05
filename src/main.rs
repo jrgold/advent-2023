@@ -15,18 +15,19 @@ mod day {
 }
 
 fn main() {
-    let day_number = 4;
+    let day_number = 5;
 
     let day: &dyn Day = match day_number {
         1 => &day_01::Day01{},
         2 => &day_02::Day02{},
         3 => &day_03::Day03{},
         4 => &day_04::Day04{},
+        5 => &day_05::Day05{},
         _ => unreachable!(),
     };
 
     let input_filename = format!("input/day_{:02}.txt", day_number);
-    // let input_filename = "input/day_04_sample.txt";
+    // let input_filename = "input/day_05_sample.txt";
 
     let input = std::fs::read_to_string(&input_filename).unwrap();
 
@@ -393,6 +394,142 @@ mod day_04 {
             }
 
             let answer: i32 = total_cards.values().sum();
+
+            Box::new(answer)
+        }
+    }
+}
+
+mod day_05 {
+    use std::collections::BTreeMap;
+    use std::fmt::Display;
+    use crate::day::{Day, Solution};
+
+    pub struct Day05;
+
+    #[derive(Debug, Clone, Copy)]
+    struct Conversion {
+        from_start: i64,
+        to_start: i64,
+        length: i64,
+    }
+
+    struct Input {
+        seeds: Vec<i64>,
+        mappings: Vec<BTreeMap<i64, Conversion>>,
+    }
+
+    impl Day for Day05 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let mut paragraphs = input.split("\n\n");
+
+            let seeds: Vec<i64> = paragraphs.next().unwrap()[7..].split(' ').map(|s| s.parse().unwrap()).collect();
+
+            // let mappingRegex = Regex::new("^([^-]*)-to-([^-]*) map:$").unwrap();
+            let mappings = paragraphs.map(|para|
+                para.lines()
+                    .skip(1)
+                    .map(|line| {
+                        let mut split = line.split(' ');
+                        let conv = Conversion {
+                            to_start: split.next().unwrap().parse().unwrap(),
+                            from_start: split.next().unwrap().parse().unwrap(),
+                            length: split.next().unwrap().parse().unwrap(),
+                        };
+                        (conv.from_start, conv)
+                    }).collect()
+            ).collect();
+
+            Box::new(Input {
+                seeds,
+                mappings,
+            })
+        }
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let mut numbers = self.seeds.clone();
+
+            for mapping in &self.mappings {
+                numbers.iter_mut()
+                    .for_each(|x| {
+                        let conv = mapping.values()
+                            .filter(|conv| *x >= conv.from_start && (*x - (conv.length - 1)) <= conv.from_start)
+                            .nth(0)
+                            .unwrap_or(&Conversion { from_start: 0, to_start: 0, length: 0 });
+
+                        *x = *x - conv.from_start + conv.to_start;
+                    })
+            }
+
+            let answer: i64 = numbers.into_iter().min().unwrap();
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let seed_ranges = self.seeds.chunks(2).map(|ss| (ss[0], ss[0] + ss[1] - 1)).collect();
+
+            let mut vec_0: Vec<(i64, i64)> = seed_ranges;
+            let mut vec_1: Vec<(i64, i64)> = vec![];
+
+            let input_ranges = &mut vec_0;
+            let output_ranges = &mut vec_1;
+
+            for mapping in &self.mappings {
+                'next_input_range: for (mut start, end) in input_ranges.iter() {
+                    if start > *end {
+                        break 'next_input_range;
+                    }
+                    let possibles = mapping.range(0..=start).last().into_iter().chain(mapping.range(start..=*end)).map(|(_, c)| c);
+                    'next_possibility: for possible in possibles {
+                        let range_start = possible.from_start;
+                        let range_end = range_start + possible.length - 1;
+
+                        let range_diff = possible.to_start - possible.from_start;
+
+                        if start > range_end {
+                            // a   ()
+                            // r ()
+                            continue 'next_possibility;
+                        } else if start >= range_start && *end > range_end {
+                            // a (   )
+                            // r ( )
+                            output_ranges.push((start + range_diff, range_end + range_diff));
+                            start = range_end + 1;
+                        } else if start >= range_start && *end <= range_end {
+                            // a (  )
+                            // r (    )
+                            output_ranges.push((start + range_diff, *end + range_diff));
+                            continue 'next_input_range;
+                        } else if start < range_start && *end <= range_end {
+                            // a (   )
+                            // r   ( )
+                            output_ranges.push((start, range_start - 1));
+                            output_ranges.push((range_start + range_diff, *end + range_diff));
+                            continue 'next_input_range;
+                        } else if start < range_start && *end > range_end {
+                            // a (     )
+                            // r   ( )
+                            output_ranges.push((start, range_start - 1));
+                            output_ranges.push((range_start + range_diff, range_end + range_diff));
+                            start = range_end + 1;
+                        }
+                    }
+                    if start <= *end {
+                        output_ranges.push((start, *end));
+                    }
+                }
+
+                std::mem::swap(input_ranges, output_ranges);
+                output_ranges.truncate(0);
+            }
+
+            let answer: i64 = input_ranges.iter()
+                .min_by_key(|r| r.0)
+                .unwrap()
+                .0;
 
             Box::new(answer)
         }
