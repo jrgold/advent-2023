@@ -15,7 +15,7 @@ mod day {
 }
 
 fn main() {
-    let day_number = 5;
+    let day_number = 6;
 
     let day: &dyn Day = match day_number {
         1 => &day_01::Day01{},
@@ -23,11 +23,12 @@ fn main() {
         3 => &day_03::Day03{},
         4 => &day_04::Day04{},
         5 => &day_05::Day05{},
+        6 => &day_06::Day06{},
         _ => unreachable!(),
     };
 
     let input_filename = format!("input/day_{:02}.txt", day_number);
-    // let input_filename = "input/day_05_sample.txt";
+    // let input_filename = "input/day_06_sample.txt";
 
     let input = std::fs::read_to_string(&input_filename).unwrap();
 
@@ -198,6 +199,7 @@ mod day_02 {
         }
     }
 }
+
 mod day_03 {
     use std::collections::{HashMap, HashSet};
     use std::fmt::Display;
@@ -531,6 +533,63 @@ mod day_05 {
                 .unwrap()
                 .0;
 
+            Box::new(answer)
+        }
+    }
+}
+
+mod day_06 {
+    use std::fmt::Display;
+    use num::BigInt;
+    use num::rational::Ratio;
+    use crate::day::{Day, Solution};
+
+    pub struct Day06;
+    struct Input {
+        input: Vec<(String, String)>
+    }
+
+    impl Day for Day06 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let mut lines = input.lines();
+            let time_line = lines.next().unwrap();
+            let record_line = lines.next().unwrap();
+
+            let input = time_line.split_ascii_whitespace().skip(1)
+                .zip(record_line.split_ascii_whitespace().skip(1))
+                .map(|(time, record)| (time.to_owned(), record.to_owned())).collect();
+
+            Box::new(Input {
+                input
+            })
+        }
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let answer: i32 = self.input.iter().map(|r| {
+                let time = r.0.parse().unwrap();
+                let record = r.1.parse().unwrap();
+                (1..time)
+                .filter(|t| t * (time - t) > record)
+                    .count() as i32
+            }).product();
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let time: String = self.input.iter().map(|r| &*r.0).collect();
+            let record: String = self.input.iter().map(|r| &*r.1).collect();
+            let time: BigInt = time.parse().unwrap();
+            let record: BigInt = record.parse().unwrap();
+
+            println!("({} + ({}*{} - 4 * {})^0.5) / 2", &time, &time, &time, &record);
+            println!("({} - ({}*{} - 4 * {})^0.5) / 2", &time, &time, &time, &record);
+            // prints input to paste into Spotlight lol
+            // 31,224,779.9109468335
+            // 7,723,190.08905316653
+            let answer = "put the above into Spotlight and count the numbers between them";
             Box::new(answer)
         }
     }
