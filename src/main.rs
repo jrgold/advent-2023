@@ -15,7 +15,7 @@ mod day {
 }
 
 fn main() {
-    let day_number = 6;
+    let day_number = 7;
 
     let day: &dyn Day = match day_number {
         1 => &day_01::Day01{},
@@ -24,11 +24,12 @@ fn main() {
         4 => &day_04::Day04{},
         5 => &day_05::Day05{},
         6 => &day_06::Day06{},
+        7 => &day_07::Day07{},
         _ => unreachable!(),
     };
 
     let input_filename = format!("input/day_{:02}.txt", day_number);
-    // let input_filename = "input/day_06_sample.txt";
+    // let input_filename = "input/day_07_sample.txt";
 
     let input = std::fs::read_to_string(&input_filename).unwrap();
 
@@ -541,7 +542,6 @@ mod day_05 {
 mod day_06 {
     use std::fmt::Display;
     use num::BigInt;
-    use num::rational::Ratio;
     use crate::day::{Day, Solution};
 
     pub struct Day06;
@@ -586,10 +586,163 @@ mod day_06 {
 
             println!("({} + ({}*{} - 4 * {})^0.5) / 2", &time, &time, &time, &record);
             println!("({} - ({}*{} - 4 * {})^0.5) / 2", &time, &time, &time, &record);
-            // prints input to paste into Spotlight lol
+            let answer = "put the above into Spotlight and count the numbers between them";
             // 31,224,779.9109468335
             // 7,723,190.08905316653
-            let answer = "put the above into Spotlight and count the numbers between them";
+            Box::new(answer)
+        }
+    }
+}
+
+mod day_07 {
+    use std::cmp::Ordering;
+    use std::collections::HashMap;
+    use std::fmt::Display;
+    use crate::day::{Day, Solution};
+
+    pub struct Day07;
+    struct Input {
+        input: Vec<(Vec<char>, i32)>,
+    }
+
+    impl Day for Day07 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let input = input.lines()
+                .map(|line| {
+                    let (hand, bid) = line.split_once(' ').unwrap();
+                    (
+                        hand.chars().collect(),
+                        bid.parse().unwrap()
+                    )
+                }).collect();
+
+            Box::new(Input {
+                input
+            })
+        }
+    }
+
+    fn part_1_card_value(c: char) -> u8 {
+        match c {
+            'A' => 14,
+            'K' => 13,
+            'Q' => 12,
+            'J' => 11,
+            'T' => 10,
+            _   => c as u8 - '0' as u8
+        }
+    }
+
+    fn part_1_hand_strength(hand: &[u8]) -> i32 {
+        let mut counts: Vec<i32> = hand.into_iter()
+            .fold(HashMap::new(), |mut m, c| {
+                *m.entry(*c).or_insert(0i32) += 1;
+                m
+            })
+            .values()
+            .copied()
+            .collect();
+        counts.sort();
+        match &*counts {
+            [5] => 7,
+            [1, 4] => 6,
+            [2, 3] => 5,
+            [1, 1, 3] => 4,
+            [1, 2, 2] => 3,
+            [1, 1, 1, 2] => 2,
+            [1, 1, 1, 1, 1] => 1,
+            _ => unreachable!()
+        }
+    }
+
+    fn part_2_card_value(c: char) -> u8 {
+        match c {
+            'A' => 14,
+            'K' => 13,
+            'Q' => 12,
+            'J' => 1,
+            'T' => 10,
+            _   => c as u8 - '0' as u8
+        }
+    }
+
+    fn part_2_hand_strength(hand: &[u8]) -> i32 {
+        let mut counts_without_jokers: Vec<i32> = hand.into_iter()
+            .filter(|v| **v != 1)
+            .fold(HashMap::new(), |mut m, c| {
+                *m.entry(*c).or_insert(0i32) += 1;
+                m
+            })
+            .values()
+            .copied()
+            .collect();
+        counts_without_jokers.sort();
+        match &*counts_without_jokers {
+            // no jokers
+            [5] => 7,
+            [1, 4] => 6,
+            [2, 3] => 5,
+            [1, 1, 3] => 4,
+            [1, 2, 2] => 3,
+            [1, 1, 1, 2] => 2,
+            [1, 1, 1, 1, 1] => 1,
+            // 1 joker
+            [4] => 7,
+            [1, 3] => 6,
+            [2, 2] => 5,
+            [1, 1, 2] => 4,
+            [1, 1, 1, 1] => 2,
+            // 2 joker
+            [3] => 7,
+            [1, 2] => 6,
+            [1, 1, 1] => 4,
+            // 3 joker
+            [2] => 7,
+            [1, 1] => 6,
+            // 4 joker
+            [1] => 7,
+            // 5 joker
+            [] => 7,
+            _ => unreachable!()
+        }
+    }
+
+    fn cmp_hands(hand1: &(i32, Vec<u8>, i32), hand2: &(i32, Vec<u8>, i32)) -> Ordering {
+        hand1.0.cmp(&hand2.0)
+            .then_with(|| hand1.1.iter().zip(hand2.1.iter())
+                .map(|(c1, c2)| c1.cmp(c2))
+                .fold(Ordering::Equal, |a, b| a.then(b))
+            )
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let mut hands: Vec<(i32, Vec<u8>, i32)> = self.input.iter()
+                .map(|(hand, bid)| {
+                    let hand: Vec<u8> = hand.iter().map(|c| part_1_card_value(*c)).collect();
+                    (part_1_hand_strength(&*hand), hand, *bid)
+                })
+                .collect();
+
+            hands.sort_by(|h1, h2| cmp_hands(h1, h2));
+
+            let answer: i32 = hands.iter().zip(1..).map(|(h, r)| h.2 * r).sum();
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let mut hands: Vec<(i32, Vec<u8>, i32)> = self.input.iter()
+                .map(|(hand, bid)| {
+                    let hand: Vec<u8> = hand.iter().map(|c| part_2_card_value(*c)).collect();
+                    (part_2_hand_strength(&*hand), hand, *bid)
+                })
+                .collect();
+
+            hands.sort_by(|h1, h2| cmp_hands(h1, h2));
+
+            let answer: i32 = hands.iter().zip(1..).map(|(h, r)| h.2 * r).sum();
+
             Box::new(answer)
         }
     }
