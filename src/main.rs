@@ -15,7 +15,7 @@ mod day {
 }
 
 fn main() {
-    let day_number = 7;
+    let day_number = 9;
 
     let day: &dyn Day = match day_number {
         1 => &day_01::Day01{},
@@ -25,11 +25,13 @@ fn main() {
         5 => &day_05::Day05{},
         6 => &day_06::Day06{},
         7 => &day_07::Day07{},
+        8 => &day_08::Day08{},
+        9 => &day_09::Day09{},
         _ => unreachable!(),
     };
 
     let input_filename = format!("input/day_{:02}.txt", day_number);
-    // let input_filename = "input/day_07_sample.txt";
+    // let input_filename = "input/day_09_sample.txt";
 
     let input = std::fs::read_to_string(&input_filename).unwrap();
 
@@ -742,6 +744,112 @@ mod day_07 {
             hands.sort_by(|h1, h2| cmp_hands(h1, h2));
 
             let answer: i32 = hands.iter().zip(1..).map(|(h, r)| h.2 * r).sum();
+
+            Box::new(answer)
+        }
+    }
+}
+
+mod day_08 {
+    use std::cmp::Ordering;
+    use std::collections::HashMap;
+    use std::fmt::Display;
+    use crate::day::{Day, Solution};
+
+    pub struct Day08;
+    struct Input {
+        input: Vec<String>,
+    }
+
+    impl Day for Day08 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let input = input.lines()
+                .map(|s| s.to_owned())
+                .collect();
+
+            Box::new(Input {
+                input
+            })
+        }
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let answer: i32 = 0;
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let answer: i32 = 0;
+
+            Box::new(answer)
+        }
+    }
+}
+
+
+mod day_09 {
+    use std::fmt::Display;
+    use crate::day::{Day, Solution};
+
+    pub struct Day09;
+    struct Input {
+        diff_seqss: Vec<Vec<Vec<i32>>>,
+    }
+
+    impl Day for Day09 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let input: Vec<Vec<i32>> = input.lines()
+                .map(|s| s.split(' ').map(|s| s.parse().unwrap()).collect())
+                .collect();
+
+            let diff_seqss: Vec<Vec<Vec<i32>>> = input.iter()
+                .map(|sequence|
+                     std::iter::successors(
+                        Some((*sequence).clone()),
+                        |seq| {
+                            let diff_seq: Vec<i32> = std::iter::zip(seq.iter(), seq.iter().skip(1))
+                                .map(|(a, b)| b - a)
+                                .collect();
+                            if diff_seq.iter().all(|n| *n == 0) {
+                                None
+                            } else {
+                                Some(diff_seq)
+                            }
+                        }
+                    ).collect()
+                ).collect();
+
+            Box::new(Input {
+                diff_seqss,
+            })
+        }
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let answer: i32 = self.diff_seqss.iter()
+                .map(|diff_seqs| {
+                    let last = diff_seqs.iter()
+                        .rev()
+                        .fold(0, |acc, seq| *seq.last().unwrap() + acc);
+                    last
+                })
+                .sum();
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let answer: i32 = self.diff_seqss.iter()
+            .map(|diff_seqs| {
+                let last = diff_seqs.iter()
+                    .rev()
+                    .fold(0, |acc, seq| *seq.first().unwrap() - acc);
+                last
+            })
+            .sum();
 
             Box::new(answer)
         }
