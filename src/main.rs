@@ -15,7 +15,7 @@ mod day {
 }
 
 fn main() {
-    let day_number = 9;
+    let day_number = 8;
 
     let day: &dyn Day = match day_number {
         1 => &day_01::Day01{},
@@ -31,7 +31,7 @@ fn main() {
     };
 
     let input_filename = format!("input/day_{:02}.txt", day_number);
-    // let input_filename = "input/day_09_sample.txt";
+    // let input_filename = "input/day_08_sample_2.txt";
 
     let input = std::fs::read_to_string(&input_filename).unwrap();
 
@@ -41,7 +41,8 @@ fn main() {
     println!("Input processing time: {}ms", input_processing_time.as_millis());
 
     let part_1_start = Instant::now();
-    let part_1_answer = solution.part_1();
+    let part_1_answer = 0;
+    // let part_1_answer = solution.part_1();
     let part_1_time = part_1_start.elapsed();
     println!("{}", part_1_answer);
     println!("Part 1 time: {}ms", part_1_time.as_millis());
@@ -751,37 +752,157 @@ mod day_07 {
 }
 
 mod day_08 {
-    use std::cmp::Ordering;
     use std::collections::HashMap;
     use std::fmt::Display;
+    use num::Integer;
+    use regex::Regex;
     use crate::day::{Day, Solution};
+
+    #[derive(Debug)]
+    enum Dir { L, R, }
+    impl Dir {
+        fn go<T> (&self, choices: (T, T)) -> T {
+            match self {
+                Dir::L => choices.0,
+                Dir::R => choices.1,
+            }
+        }
+        fn from(c: char) -> Self {
+            match c {
+                'L' => Dir::L,
+                'R' => Dir::R,
+                _   => unreachable!(),
+            }
+        }
+    }
 
     pub struct Day08;
     struct Input {
-        input: Vec<String>,
+        movements: Vec<Dir>,
+        graph: HashMap<i32, (i32, i32)>,
+    }
+
+    fn to_id(name: &str) -> i32 {
+        let bytes = name.as_bytes();
+        (bytes[0] as i32 - 'A' as i32) * 26 * 26 +
+            (bytes[1] as i32 - 'A' as i32) * 26 +
+            (bytes[2] as i32 - 'A' as i32)
+    }
+
+    fn to_name(id: i32) -> String {
+        let mut s = String::new();
+        s.push((id / 26 / 26 + 'A' as i32) as u8 as char);
+        s.push(((id / 26) % 26 + 'A' as i32) as u8 as char);
+        s.push((id % 26 + 'A' as i32) as u8 as char);
+        s
     }
 
     impl Day for Day08 {
         fn process_input(&self, input: &str) -> Box<dyn Solution> {
-            let input = input.lines()
-                .map(|s| s.to_owned())
+            let mut lines = input.lines();
+
+            let movements = lines.next().unwrap().chars().map(Dir::from).collect();
+
+            lines.next();
+
+            let line_regex = Regex::new("^(...) = \\((...), (...)\\)$").unwrap();
+
+            let graph = lines
+                .map(|line| {
+                    let captures = line_regex.captures(line).unwrap();
+                    (
+                        to_id(captures.get(1).unwrap().as_str()),
+                        (
+                            to_id(captures.get(2).unwrap().as_str()),
+                            to_id(captures.get(3).unwrap().as_str())
+                        )
+                    )
+                })
                 .collect();
 
             Box::new(Input {
-                input
+                movements,
+                graph,
             })
+        }
+    }
+
+    impl Input {
+        fn period(&self, start: i32) -> (Vec<u64>, u64, Vec<u64>) {
+            let mut zs: Vec<(u64, i32)> = vec![];
+            let mut loc = start;
+            let mut moves = 0u64;
+            for dir in self.movements.iter().cycle() {
+                loc = dir.go(*self.graph.get(&loc).unwrap());
+                moves += 1;
+                if loc % 26 == 25 {
+                    if let Some((period_start, _)) = zs.iter().filter(|z| z.1 == loc).next() {
+                        let period_end = moves;
+                        return (
+                            zs.iter().copied()
+                                .take_while(|(p, _)| p < period_start)
+                                .map(|(p, _)| p)
+                                .collect(),
+                            period_end - period_start,
+                            zs.iter().copied()
+                                .skip_while(|(p, _)| p < period_start)
+                                .map(|(p, _)| p)
+                                .collect(),
+                        );
+                    } else {
+                        zs.push((moves, loc));
+                    }
+                }
+            }
+            unreachable!()
         }
     }
 
     impl Solution for Input {
         fn part_1(&self) -> Box<dyn Display> {
-            let answer: i32 = 0;
+            let mut moves = 0;
+            let mut loc = to_id("AAA");
+
+            for dir in self.movements.iter().cycle() {
+                loc = dir.go(*self.graph.get(&loc).unwrap());
+                moves += 1;
+                if loc == to_id("ZZZ") {
+                    break;
+                }
+            }
+
+            let answer: i32 = moves;
 
             Box::new(answer)
         }
 
         fn part_2(&self) -> Box<dyn Display> {
-            let answer: i32 = 0;
+            let mut moves = 0;
+            let mut starters: Vec<i32> = self.graph.keys().copied().filter(|id| *id % 26 == 0).collect();
+
+            // all paths are periodic through a single Z node, with periods equal
+            // to the distance from the respective A node. This means we can just
+            // lowest-common-multiple the periods. This solution is more general,
+            // working for multi-end cycles and differently-sized/non-cyclical
+            // lead-in sequences.
+
+            let periods: Vec<(Vec<u64>, u64, Vec<u64>)> = starters.into_iter()
+                .map(|id| self.period(id))
+                .collect();
+
+            let answer = (0..)
+                .flat_map(|n| {
+                    let n = n;
+                    let period = periods[0].1;
+                    periods[0].2.iter()
+                        .map(move |x| n * period + x)
+                })
+                .filter(|x| {
+                    periods[1..].iter().all(|ghost| {
+                        ghost.0.contains(x) || ghost.2.iter().any(|y| (x - y) % ghost.1 == 0)
+                    })
+                })
+                .next().unwrap();
 
             Box::new(answer)
         }
