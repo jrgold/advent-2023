@@ -15,7 +15,7 @@ mod day {
 }
 
 fn main() {
-    let day_number = 8;
+    let day_number = 11;
 
     let day: &dyn Day = match day_number {
         1 => &day_01::Day01{},
@@ -27,11 +27,12 @@ fn main() {
         7 => &day_07::Day07{},
         8 => &day_08::Day08{},
         9 => &day_09::Day09{},
-        _ => unreachable!(),
+        11 => &day_11::Day11{},
+        _ => unimplemented!(),
     };
 
     let input_filename = format!("input/day_{:02}.txt", day_number);
-    // let input_filename = "input/day_08_sample_2.txt";
+    // let input_filename = "input/day_11_sample.txt";
 
     let input = std::fs::read_to_string(&input_filename).unwrap();
 
@@ -41,8 +42,7 @@ fn main() {
     println!("Input processing time: {}ms", input_processing_time.as_millis());
 
     let part_1_start = Instant::now();
-    let part_1_answer = 0;
-    // let part_1_answer = solution.part_1();
+    let part_1_answer = solution.part_1();
     let part_1_time = part_1_start.elapsed();
     println!("{}", part_1_answer);
     println!("Part 1 time: {}ms", part_1_time.as_millis());
@@ -754,7 +754,6 @@ mod day_07 {
 mod day_08 {
     use std::collections::HashMap;
     use std::fmt::Display;
-    use num::Integer;
     use regex::Regex;
     use crate::day::{Day, Solution};
 
@@ -789,6 +788,7 @@ mod day_08 {
             (bytes[2] as i32 - 'A' as i32)
     }
 
+    #[allow(unused)]
     fn to_name(id: i32) -> String {
         let mut s = String::new();
         s.push((id / 26 / 26 + 'A' as i32) as u8 as char);
@@ -877,8 +877,7 @@ mod day_08 {
         }
 
         fn part_2(&self) -> Box<dyn Display> {
-            let mut moves = 0;
-            let mut starters: Vec<i32> = self.graph.keys().copied().filter(|id| *id % 26 == 0).collect();
+            let starters: Vec<i32> = self.graph.keys().copied().filter(|id| *id % 26 == 0).collect();
 
             // all paths are periodic through a single Z node, with periods equal
             // to the distance from the respective A node. This means we can just
@@ -908,7 +907,6 @@ mod day_08 {
         }
     }
 }
-
 
 mod day_09 {
     use std::fmt::Display;
@@ -971,6 +969,87 @@ mod day_09 {
                 last
             })
             .sum();
+
+            Box::new(answer)
+        }
+    }
+}
+
+mod day_11 {
+    use std::collections::{HashMap, HashSet};
+    use std::fmt::Display;
+    use crate::day::{Day, Solution};
+
+    pub struct Day11;
+    struct Input {
+        galaxy_coords: HashSet<(i32, i32)>,
+    }
+
+    fn expand_gaps(coords: &HashSet<i32>, extra: i32) -> HashMap<i32, i32> {
+        let mut running_extra = 0;
+        let mut adjusted: HashMap<i32, i32> = HashMap::new();
+        for x in (*coords.iter().min().unwrap())..=*coords.iter().max().unwrap() {
+            if !coords.contains(&x) {
+                running_extra += extra;
+            }
+            adjusted.insert(x, x + running_extra);
+        }
+        adjusted
+    }
+
+    fn expand(coords: &HashSet<(i32, i32)>, extra: i32) -> Vec<(i32, i32)> {
+        let xs: HashSet<i32> = coords.iter().map(|(x, _)| *x).collect();
+        let ys: HashSet<i32> = coords.iter().map(|(_, y)| *y).collect();
+
+        let adjusted_xs = expand_gaps(&xs, extra);
+        let adjusted_ys = expand_gaps(&ys, extra);
+
+        coords.into_iter()
+            .map(|(x, y)| (
+                *adjusted_xs.get(&x).unwrap() as i32,
+                *adjusted_ys.get(&y).unwrap() as i32
+            ))
+            .collect()
+    }
+
+    impl Day for Day11 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let galaxy_coords: HashSet<(i32, i32)> = input.lines().enumerate()
+                .flat_map(|(y, line)| line.chars().enumerate().map(move |(x, c)| ((x as i32, y as i32), c)))
+                .filter_map(|(p, c)| if c == '#' { Some(p) } else { None })
+                .collect();
+
+            Box::new(Input {
+                galaxy_coords
+            })
+        }
+    }
+
+    fn sum_distances(coords: &[(i32 ,i32)]) -> i64 {
+        let mut answer: i64 = 0;
+
+        for i in 0..coords.len()-1 {
+            for j in i+1..coords.len() {
+                answer += (coords[i].0 - coords[j].0).abs() as i64 +
+                    (coords[i].1 - coords[j].1).abs() as i64;
+            }
+        }
+
+        answer
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let expanded = expand(&self.galaxy_coords, 1);
+            let answer = sum_distances(&expanded);
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let expanded = expand(&self.galaxy_coords, 999999);
+            let answer = sum_distances(&expanded);
+
 
             Box::new(answer)
         }
