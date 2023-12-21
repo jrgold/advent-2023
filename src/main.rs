@@ -15,7 +15,7 @@ mod day {
 }
 
 fn main() {
-    let day_number = 11;
+    let day_number = 17;
 
     let day: &dyn Day = match day_number {
         1 => &day_01::Day01{},
@@ -28,11 +28,15 @@ fn main() {
         8 => &day_08::Day08{},
         9 => &day_09::Day09{},
         11 => &day_11::Day11{},
+        12 => &day_12::Day12{},
+        13 => &day_13::Day13{},
+        14 => &day_14::Day14{},
+        17 => &day_17::Day17{},
         _ => unimplemented!(),
     };
 
     let input_filename = format!("input/day_{:02}.txt", day_number);
-    // let input_filename = "input/day_11_sample.txt";
+    // let input_filename = format!("input/day_{:02}_sample_2.txt", day_number);
 
     let input = std::fs::read_to_string(&input_filename).unwrap();
 
@@ -1050,8 +1054,691 @@ mod day_11 {
             let expanded = expand(&self.galaxy_coords, 999999);
             let answer = sum_distances(&expanded);
 
+            Box::new(answer)
+        }
+    }
+}
+
+mod day_12 {
+    use std::collections::HashMap;
+    use std::fmt::Display;
+    use crate::day::{Day, Solution};
+    use crate::day_12::Progress::{Either, MustBeDamaged, MustBeOperational};
+    use crate::day_12::Spring::Unknown;
+
+    #[derive(Debug, Eq, PartialEq, Clone, Copy)]
+    enum Spring {
+        Operational,
+        Damaged,
+        Unknown,
+    }
+
+    impl Spring {
+        fn from(c: char) -> Spring {
+            match c {
+                '.' => Spring::Operational,
+                '#' => Spring::Damaged,
+                '?' => Unknown,
+                _   => panic!("invalid spring character: {}", c),
+            }
+        }
+    }
+
+    pub struct Day12;
+    struct Input {
+        input: Vec<(Vec<Spring>, Vec<i32>)>,
+    }
+
+    impl Day for Day12 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let input = input.lines()
+                .map(|line| {
+                    let (springs, groups) = line.split_once(' ').unwrap();
+                    (
+                        springs.chars().map(|c| Spring::from(c)).collect(),
+                        groups.split(',').map(|s| s.parse().unwrap()).collect()
+                    )
+                }).collect();
+
+            Box::new(Input {
+                input
+            })
+        }
+    }
+
+    #[allow(unused)]
+    fn show(r: &[Spring]) -> String {
+        r.iter().map(|s| match s {
+            Spring::Operational => '.',
+            Spring::Damaged => '#',
+            Spring::Unknown => '?',
+        }).collect()
+    }
+
+    #[derive(Debug, Eq, PartialEq, Clone, Copy, Hash)]
+    enum Progress {
+        MustBeDamaged,
+        MustBeOperational,
+        Either,
+    }
+
+    fn variations_2(running: &mut Vec<Spring>, cache: &mut HashMap<(usize, Progress, Vec<i32>), u64>, index: usize, next: Progress, groups: &mut [i32]) -> u64 {
+        let g_clone = groups.to_owned();
+        if let Some(cached) = cache.get(&(index, next, g_clone)) {
+            return *cached;
+        }
+        let g_clone = groups.to_owned();
+
+        // println!("{} {:?} {:?}", index, next, groups);
+        if index == running.len() {
+            if groups.is_empty() {
+                return 1;
+            } else {
+                return 0;
+            }
+        }
+
+        let v = match (running[index], next) {
+            (Spring::Damaged, MustBeDamaged | Either) =>
+                if groups[0] == 1 {
+                    // end of group
+                    variations_2(running, cache, index + 1, MustBeOperational, &mut groups[1..])
+                } else {
+                    // group still ongoing
+                    groups[0] -= 1;
+                    let v = variations_2(running, cache, index + 1, MustBeDamaged, groups);
+                    groups[0] += 1;
+                    v
+                },
+            (Spring::Damaged, MustBeOperational) => 0,
+            (Spring::Operational, MustBeDamaged) => 0,
+            (Spring::Operational, MustBeOperational | Either) =>
+                variations_2(running, cache, index + 1, if groups.is_empty() { MustBeOperational } else { Either }, groups),
+            (Spring::Unknown, MustBeDamaged) =>
+                if groups[0] == 1 {
+                    // end of group
+                    variations_2(running, cache, index + 1, MustBeOperational, &mut groups[1..])
+                } else {
+                    // group still ongoing
+                    groups[0] -= 1;
+                    let v = variations_2(running, cache, index + 1, MustBeDamaged, groups);
+                    groups[0] += 1;
+                    v
+                },
+            (Spring::Unknown, MustBeOperational) =>
+                variations_2(running, cache, index + 1, if groups.is_empty() { MustBeOperational } else { Either }, groups),
+            (Spring::Unknown, Either) => {
+                let assume_damaged = if groups[0] == 1 {
+                        // end of group
+                        variations_2(running, cache, index + 1, MustBeOperational, &mut groups[1..])
+                    } else {
+                        // group still ongoing
+                        groups[0] -= 1;
+                        let v = variations_2(running, cache, index + 1, MustBeDamaged, groups);
+                        groups[0] += 1;
+                        v
+                    };
+                let assume_operational = variations_2(running, cache, index + 1, if groups.is_empty() { MustBeOperational } else { Either }, groups);
+                assume_damaged + assume_operational
+            }
+        };
+
+        cache.insert((index, next, g_clone), v);
+        v
+    }
+
+    // fn variations(running: &[Spring], index: usize, in_group: bool, groups: &[i32]) -> u64 {
+    //     if index >= running.len() {
+    //         if groups.is_empty() || (groups.len() == 1 && groups[0] == 0) {
+    //             return 1;
+    //         } else {
+    //             return 0;
+    //         }
+    //     }
+    //
+    //     match running[index] {
+    //         Spring::Unknown => {
+    //             0
+    //         },
+    //         Spring::Damaged => {
+    //             if in_group {
+    //                 if groups[0]
+    //             }
+    //         },
+    //         Spring::Operational => {
+    //             if in_group {
+    //                 if groups[0] == 0 {
+    //                     // reached the end of a group when it was done
+    //                     variations(running, index + 1, false, &groups[1..])
+    //                 } else {
+    //                     // reached the end of a group before the group was long enough
+    //                     0
+    //                 }
+    //             } else {
+    //                 variations(running, index + 1, false, groups)
+    //             }
+    //         }
+    //     }
+    // }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let answer: u64 = self.input.iter()
+                .map(|(s, g)| {
+                    let mut s = s.clone();
+                    let mut cache = HashMap::new();
+                    variations_2(&mut s, &mut cache, 0, Either, &mut g.clone())
+                }).sum();
 
             Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let answer: u64 = self.input.iter()
+                .map(|(s, g)| {
+                    let mut unfolded_springs = s.clone();
+                    unfolded_springs.push(Unknown);
+                    unfolded_springs.extend_from_slice(&s);
+                    unfolded_springs.push(Unknown);
+                    unfolded_springs.extend_from_slice(&s);
+                    unfolded_springs.push(Unknown);
+                    unfolded_springs.extend_from_slice(&s);
+                    unfolded_springs.push(Unknown);
+                    unfolded_springs.extend_from_slice(&s);
+
+                    let mut unfolded_groups = g.repeat(5);
+
+                    let mut cache = HashMap::new();
+
+                    variations_2(&mut unfolded_springs, &mut cache, 0, Either, &mut unfolded_groups)
+                }).sum();
+
+            Box::new(answer)
+        }
+    }
+}
+
+mod day_13 {
+    use std::collections::HashSet;
+    use std::fmt::Display;
+    use crate::day::{Day, Solution};
+
+    pub struct Day13;
+
+    struct Pattern {
+        pattern: HashSet<(i32, i32)>,
+        x_max: i32,
+        y_max: i32,
+    }
+    struct Input {
+        input: Vec<Pattern>,
+    }
+
+    impl Pattern {
+        fn vertical_reflection(&self, smudges: i32) -> Option<i32> {
+            for x in 0..self.x_max {
+                let mut l = x;
+                let mut r = l + 1;
+                let mirror_size = l.min(self.x_max - l - 1) + 1;
+                let mut difference = 0;
+                for _ in 0..mirror_size {
+                    let left_differences = self.pattern.iter()
+                        .filter(|(x, _)| *x == l)
+                        .filter(|(_, y)| !self.pattern.contains(&(r, *y)))
+                        .count() as i32;
+                    let right_differences = self.pattern.iter()
+                        .filter(|(x, _)| *x == r)
+                        .filter(|(_, y)| !self.pattern.contains(&(l, *y)))
+                        .count() as i32;
+
+                    difference += left_differences + right_differences;
+
+                    l -= 1;
+                    r += 1;
+                }
+
+                if difference == smudges {
+                    return Some(x + 1);
+                }
+
+            }
+
+            None
+        }
+
+        fn horizontal_reflection(&self, smudges: i32) -> Option<i32> {
+            for y in 0..self.y_max {
+                let mut t = y;
+                let mut b = t + 1;
+                let mirror_size = t.min(self.y_max - t - 1) + 1;
+                let mut difference = 0;
+                for _ in 0..mirror_size {
+                    let top_differences = self.pattern.iter()
+                        .filter(|(_, y)| *y == t)
+                        .filter(|(x, _)| !self.pattern.contains(&(*x, b)))
+                        .count() as i32;
+                    let bottom_differences = self.pattern.iter()
+                        .filter(|(_, y)| *y == b)
+                        .filter(|(x, _)| !self.pattern.contains(&(*x, t)))
+                        .count() as i32;
+
+                    difference += top_differences + bottom_differences;
+
+                    t -= 1;
+                    b += 1;
+                }
+
+                if difference == smudges {
+                    return Some(y + 1);
+                }
+            }
+
+            None
+        }
+    }
+
+    impl Day for Day13 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let input = input.split("\n\n").map(|pattern| {
+                let pattern: HashSet<(i32, i32)> = pattern.lines()
+                    .enumerate()
+                    .flat_map(|(y, line)|
+                        line.chars()
+                            .enumerate()
+                            .filter(|(_, c)| *c == '#')
+                            .map(move |(x, _)| (x as i32, y as i32))
+                    ).collect();
+                let x_max = pattern.iter().map(|p| p.0).max().unwrap();
+                let y_max = pattern.iter().map(|p| p.1).max().unwrap();
+                Pattern {
+                    pattern,
+                    x_max,
+                    y_max,
+                }
+            }).collect();
+
+            Box::new(Input {
+                input
+            })
+        }
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let answer: i32 = self.input.iter().map(|p| {
+                100 * p.horizontal_reflection(0).unwrap_or(0) + p.vertical_reflection(0).unwrap_or(0)
+            }).sum();
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let answer: i32 = self.input.iter().map(|p| {
+                100 * p.horizontal_reflection(1).unwrap_or(0) + p.vertical_reflection(1).unwrap_or(0)
+            }).sum();
+
+            Box::new(answer)
+        }
+    }
+}
+
+mod day_14 {
+    use std::collections::HashMap;
+    use std::fmt::Display;
+    use crate::day::{Day, Solution};
+    use crate::day_14::Rock::Mobile;
+
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    enum Rock { Fixed, Mobile, }
+
+    impl TryFrom<char> for Rock {
+        type Error = ();
+        fn try_from(c: char) -> Result<Self, Self::Error> {
+            match c {
+                'O' => Ok(Rock::Mobile),
+                '#' => Ok(Rock::Fixed),
+                _   => Err(())
+            }
+        }
+    }
+
+    pub struct Day14;
+    #[derive(Clone)]
+    struct Input {
+        platform: HashMap<(i32, i32), Rock>,
+        x_max: i32,
+        y_max: i32,
+    }
+
+    impl Input {
+        fn load(&self) -> i32 {
+            self.platform.iter()
+                .filter(|(_, r)| **r == Mobile)
+                .map(|(p, _)| self.y_max - p.1 + 1)
+                .sum()
+        }
+
+        fn north(&mut self) {
+            let mut mobiles: Vec<(i32, i32)> = self.platform.iter()
+                .filter(|(_, r)| **r == Mobile)
+                .map(|(p, _)| p)
+                .copied()
+                .collect();
+            mobiles.sort_by_key(|p| p.1);
+
+            mobiles.iter().for_each(|p| {
+                self.platform.remove(p);
+                let mut dest = *p;
+                for y in (0..p.1).rev() {
+                    if self.platform.contains_key(&(p.0, y)) {
+                        break;
+                    }
+                    dest.1 = y;
+                }
+                self.platform.insert(dest, Mobile);
+            })
+        }
+
+        fn south(&mut self) {
+            let mut mobiles: Vec<(i32, i32)> = self.platform.iter()
+                .filter(|(_, r)| **r == Mobile)
+                .map(|(p, _)| p)
+                .copied()
+                .collect();
+            mobiles.sort_by_key(|p| p.1);
+            mobiles.reverse();
+
+            mobiles.iter().for_each(|p| {
+                self.platform.remove(p);
+                let mut dest = *p;
+                for y in p.1+1..=self.y_max {
+                    if self.platform.contains_key(&(p.0, y)) {
+                        break;
+                    }
+                    dest.1 = y;
+                }
+                self.platform.insert(dest, Mobile);
+            })
+        }
+
+        fn west(&mut self) {
+            let mut mobiles: Vec<(i32, i32)> = self.platform.iter()
+                .filter(|(_, r)| **r == Mobile)
+                .map(|(p, _)| p)
+                .copied()
+                .collect();
+            mobiles.sort_by_key(|p| p.0);
+
+            mobiles.iter().for_each(|p| {
+                self.platform.remove(p);
+                let mut dest = *p;
+                for x in (0..p.0).rev() {
+                    if self.platform.contains_key(&(x, p.1)) {
+                        break;
+                    }
+                    dest.0 = x;
+                }
+                self.platform.insert(dest, Mobile);
+            })
+        }
+
+        fn east(&mut self) {
+            let mut mobiles: Vec<(i32, i32)> = self.platform.iter()
+                .filter(|(_, r)| **r == Mobile)
+                .map(|(p, _)| p)
+                .copied()
+                .collect();
+            mobiles.sort_by_key(|p| p.0);
+            mobiles.reverse();
+
+            mobiles.iter().for_each(|p| {
+                self.platform.remove(p);
+                let mut dest = *p;
+                for x in p.0+1..=self.x_max {
+                    if self.platform.contains_key(&(x, p.1)) {
+                        break;
+                    }
+                    dest.0 = x;
+                }
+                self.platform.insert(dest, Mobile);
+            })
+        }
+
+        fn spin(&mut self) {
+            self.north();
+            self.west();
+            self.south();
+            self.east();
+        }
+    }
+
+    impl Day for Day14 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let platform: HashMap<(i32, i32), Rock> = input.lines()
+                .enumerate()
+                .flat_map(|(y, line)|
+                    line.chars()
+                        .enumerate()
+                        .filter_map(move |(x, c)| c.try_into().map(|r: Rock| ((x as i32, y as i32), r)).ok())
+                ).collect();
+            let x_max = platform.keys().map(|p| p.0).max().unwrap();
+            let y_max = platform.keys().map(|p| p.1).max().unwrap();
+            Box::new(Input {
+                platform,
+                x_max,
+                y_max,
+            })
+        }
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let mut platform = self.clone();
+            platform.north();
+            let answer = platform.load();
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let mut platform = self.clone();
+
+            let mut cycles: Vec<Input> = vec![];
+            cycles.push(platform.clone());
+            let mut cycle_start = 0;
+            let mut cycle_end = 0;
+
+            'cycle_found: for cycle in 1..=1000 {
+                platform.spin();
+
+                for i in 0..cycle {
+                    if platform.platform == cycles[i].platform {
+                        cycle_start = i;
+                        cycle_end = cycle;
+                        break 'cycle_found;
+                    }
+                }
+
+                cycles.push(platform.clone())
+            }
+
+            let cycles_left = (1_000_000_000 - cycle_end) % (cycle_end - cycle_start);
+            for _ in 0..cycles_left {
+                platform.spin();
+            }
+
+            let answer = platform.load();
+
+            Box::new(answer)
+        }
+    }
+}
+
+mod day_17 {
+    use std::cmp::Reverse;
+    use std::collections::{HashMap, HashSet};
+    use std::fmt::Display;
+    use std::hash::Hash;
+    use priority_queue::PriorityQueue;
+    use crate::day::{Day, Solution};
+    use crate::day_17::Dir::{N, S, E, W};
+
+    pub struct Day17;
+    #[derive(Clone)]
+    struct Input {
+        blocks: HashMap<(i32, i32), u8>,
+        x_max: i32,
+        y_max: i32,
+    }
+
+    impl Day for Day17 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let blocks: HashMap<(i32, i32), u8> = input.lines()
+                .enumerate()
+                .flat_map(|(y, line)|
+                    line.chars()
+                        .enumerate()
+                        .map(move |(x, c)| ((x as i32, y as i32), c as u8 - '0' as u8))
+                ).collect();
+            let x_max = blocks.keys().map(|(x, _)| *x).max().unwrap();
+            let y_max = blocks.keys().map(|(_, y)| *y).max().unwrap();
+            Box::new(Input {
+                blocks,
+                x_max,
+                y_max,
+            })
+        }
+    }
+
+    #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+    enum Dir { N, S, E, W, }
+    impl Dir {
+        fn movement(&self) -> (i32, i32) {
+            match self {
+                N => (0, -1),
+                S => (0, 1),
+                E => (1, 0),
+                W => (-1, 0),
+            }
+        }
+
+        fn regular_crucible_movements(&self, straight_distance: i32) -> Vec<Dir> {
+            [N, S, E, W].into_iter()
+                .filter(|&d| match (self, d) {
+                    (N, S) => false,
+                    (S, N) => false,
+                    (W, E) => false,
+                    (E, W) => false,
+                    _      => true,
+                })
+                .filter(|&d| d != *self || straight_distance < 3)
+                .collect()
+        }
+
+        fn ultra_crucible_movements(&self, straight_distance: i32) -> Vec<Dir> {
+            if straight_distance < 4 {
+                return Vec::from(&[*self]);
+            }
+
+            [N, S, E, W].into_iter()
+                .filter(|&d| match (self, d) {
+                    (N, S) => false,
+                    (S, N) => false,
+                    (W, E) => false,
+                    (E, W) => false,
+                    _      => true,
+                })
+                .filter(|&d| d != *self || straight_distance < 10)
+                .collect()
+        }
+    }
+
+    #[derive(Debug, Hash, PartialEq, Eq)]
+    struct Position {
+        pos: (i32, i32),
+        dir: Dir,
+        straight_distance: i32,
+    }
+
+    fn least_path<F, G>(input: &Input, allowable_movements: F, can_stop: G, start: (i32, i32), end: (i32, i32), starting_direction: Dir) -> i32
+        where F: Fn(&Dir, i32) -> Vec<Dir>,
+              G: Fn(&Position) -> bool
+    {
+        let mut to_visit: PriorityQueue<Position, Reverse<i32>> = PriorityQueue::new();
+        let mut visited: HashSet<Position> = HashSet::new();
+
+        to_visit.push(Position { pos: start, dir: starting_direction, straight_distance: 0 }, Reverse(0));
+
+        loop {
+            let (position, distance) = to_visit.pop().unwrap();
+
+            if position.pos == end && can_stop(&position) {
+                return distance.0;
+            }
+
+            let unvisited_moves: Vec<Position> = allowable_movements(&position.dir, position.straight_distance).into_iter()
+                .map(|d| {
+                    let movement = d.movement();
+                    Position {
+                        pos: (position.pos.0 + movement.0, position.pos.1 + movement.1),
+                        dir: d,
+                        straight_distance: if d == position.dir { position.straight_distance + 1 } else { 1 },
+                    }
+                })
+                .filter(|new_pos| new_pos.pos.0 >= 0 && new_pos.pos.0 <= input.x_max && new_pos.pos.1 >= 0 && new_pos.pos.1 <= input.y_max)
+                .filter(|new_pos| !visited.contains(new_pos))
+                .collect();
+
+            for unvisited in unvisited_moves {
+                let tentative_distance = distance.0 + *input.blocks.get(&unvisited.pos).unwrap() as i32;
+                match to_visit.get(&unvisited) {
+                    Some((_, existing_tentative_distance)) => if tentative_distance < existing_tentative_distance.0 {
+                        to_visit.change_priority(&unvisited, Reverse(tentative_distance));
+                    },
+                    None => {
+                        to_visit.push(unvisited, Reverse(tentative_distance));
+                    },
+                }
+            }
+
+            visited.insert(position);
+        }
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let answer = least_path(
+                &self,
+                &Dir::regular_crucible_movements,
+                |_| true,
+                (0, 0),
+                (self.x_max, self.y_max),
+                S
+            );
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let answer_east = least_path(
+                &self,
+                &Dir::ultra_crucible_movements,
+                |p| p.straight_distance >= 4,
+                (0, 0),
+                (self.x_max, self.y_max),
+                E
+            );
+
+            let answer_south = least_path(
+                &self,
+                &Dir::ultra_crucible_movements,
+                |p| p.straight_distance >= 4,
+                (0, 0),
+                (self.x_max, self.y_max),
+                S
+            );
+
+            Box::new(std::cmp::min(answer_east, answer_south))
         }
     }
 }
