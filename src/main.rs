@@ -15,7 +15,7 @@ mod day {
 }
 
 fn main() {
-    let day_number = 17;
+    let day_number = 18;
 
     let day: &dyn Day = match day_number {
         1 => &day_01::Day01{},
@@ -32,11 +32,12 @@ fn main() {
         13 => &day_13::Day13{},
         14 => &day_14::Day14{},
         17 => &day_17::Day17{},
+        18 => &day_18::Day18{},
         _ => unimplemented!(),
     };
 
     let input_filename = format!("input/day_{:02}.txt", day_number);
-    // let input_filename = format!("input/day_{:02}_sample_2.txt", day_number);
+    // let input_filename = format!("input/day_{:02}_sample.txt", day_number);
 
     let input = std::fs::read_to_string(&input_filename).unwrap();
 
@@ -1742,3 +1743,264 @@ mod day_17 {
         }
     }
 }
+
+mod day_18 {
+    use std::collections::{BTreeSet, HashMap, HashSet};
+    use std::fmt::Display;
+    use std::str::FromStr;
+    use regex::Regex;
+    use crate::day::{Day, Solution};
+    use crate::day_18::Dir::{D, L, R, U};
+
+    pub struct Day18;
+
+    #[derive(Clone, Copy, Debug)]
+    enum Dir { U, D, L, R, }
+    impl Dir {
+        fn movement(&self) -> (i32, i32) {
+            match self {
+                U => (0, -1),
+                D => (0, 1),
+                L => (-1, 0),
+                R => (1, 0),
+            }
+        }
+
+        fn left(&self) -> (i32, i32) {
+            match self {
+                U => (-1, 0),
+                D => (1, 0),
+                L => (0, 1),
+                R => (0, -1),
+            }
+        }
+
+        fn right(&self) -> (i32, i32) {
+            match self {
+                U => (1, 0),
+                D => (-1, 0),
+                L => (0, -1),
+                R => (0, 1),
+            }
+        }
+
+        fn turn_from(&self, previous: Self) -> i32 {
+            match (previous, self) {
+                (U, L) | (L, D) | (D, R) | (R, U) => -1,
+                (L, U) | (D, L) | (R, D) | (U, R) => 1,
+                _ => panic!("illegal dig"),
+            }
+        }
+    }
+    impl FromStr for Dir {
+        type Err = ();
+        fn from_str(value: &str) -> Result<Self, Self::Err> {
+            match value {
+                "U" => Ok(U),
+                "D" => Ok(D),
+                "L" => Ok(L),
+                "R" => Ok(R),
+                _   => Err(())
+            }
+        }
+    }
+
+    struct Instruction {
+        dir: Dir,
+        distance: i32,
+    }
+
+    struct Input {
+        plain_instructions: Vec<Instruction>,
+        hex_instructions: Vec<Instruction>,
+    }
+
+    impl Day for Day18 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let hex_regex = Regex::new("^\\(#(.{5})(.)\\)$").unwrap();
+            let (plain, hex) = input.lines()
+                .map(|line| {
+                    let mut split = line.split(" ");
+                    let plain = Instruction {
+                        dir: split.next().unwrap().parse().unwrap(),
+                        distance: split.next().unwrap().parse().unwrap(),
+                    };
+                    let hex_captures = hex_regex.captures(split.next().unwrap()).unwrap();
+                    let hex = Instruction {
+                        dir: match hex_captures.get(2).unwrap().as_str() {
+                            "0" => R,
+                            "1" => D,
+                            "2" => L,
+                            "3" => U,
+                            _ => panic!()
+                        },
+                        distance: i32::from_str_radix(hex_captures.get(1).unwrap().as_str(), 16).unwrap(),
+                    };
+                    (plain, hex)
+                })
+                .unzip();
+
+            Box::new(Input {
+                plain_instructions: plain,
+                hex_instructions: hex,
+            })
+        }
+    }
+
+    fn dig_corners(instructions: &[Instruction]) -> HashSet<(i32, i32)> {
+        let mut corners: HashSet<(i32, i32)> = HashSet::new();
+        let mut position = (0, 0);
+        corners.insert(position);
+
+        for instruction in instructions {
+            let movement = instruction.dir.movement();
+            position.0 += movement.0 * instruction.distance;
+            position.1 += movement.1 * instruction.distance;
+            corners.insert(position);
+        }
+
+        corners
+    }
+
+    fn section_range(points: &BTreeSet<i32>) -> Vec<(i32, i32)> {
+        let mut points = points.into_iter();
+        let mut sections: Vec<(i32, i32)> = vec![];
+        let mut previous = *points.next().unwrap();
+        sections.push((previous, previous));
+        for &x in points {
+            if x - previous > 1 {
+                sections.push((previous + 1, x - 1));
+            }
+            sections.push((x, x));
+            previous = x
+        }
+        sections
+    }
+
+    fn inside<I>(points: I, turn: i32, dir: Dir) -> impl Iterator<Item=(usize, usize)>
+        where I: Iterator<Item=(usize, usize)>
+    {
+        let inside_diff = if turn < 0 { dir.left() } else { dir.right() };
+        points.map(move |p| (
+            (p.0 as isize + inside_diff.0 as isize) as usize,
+            (p.1 as isize + inside_diff.1 as isize) as usize
+        ))
+    }
+
+    fn dig_big_pit(instructions: &[Instruction]) -> usize {
+        // identify if trench is clockwise or anticlockwise
+        let turn: i32 =
+            std::iter::zip(
+                instructions.iter().map(|i| i.dir),
+                instructions.iter().map(|i| i.dir).skip(1),
+            ).map(|(prev, next)| next.turn_from(prev))
+            .sum();
+
+        // divide x and y grid into exclusive ranges, with 1-wide ranges where there are corners
+        let corners = dig_corners(instructions);
+        let corner_xs: BTreeSet<i32> = corners.iter().map(|p| p.0).collect();
+        let corner_ys: BTreeSet<i32> = corners.iter().map(|p| p.1).collect();
+        let x_sections = section_range(&corner_xs);
+        let y_sections = section_range(&corner_ys);
+
+        // build outline of index into ranges, rather than all the grid points
+        let mut position = (0, 0);
+        let mut position_index = (
+            x_sections.iter().position(|r| *r == (position.0, position.0)).unwrap(),
+            y_sections.iter().position(|r| *r == (position.1, position.1)).unwrap(),
+        );
+
+        let mut outline: HashSet<(usize, usize)> = HashSet::from([position_index]);
+        let mut inside_boundary: HashSet<(usize, usize)> = HashSet::new();
+
+        for instruction in instructions {
+            match instruction.dir {
+                R => {
+                    position.0 += instruction.distance;
+                    let start = position_index.0;
+                    let end = start + x_sections[position_index.0..].iter()
+                        .position(|r| *r == (position.0, position.0)).unwrap();
+                    position_index.0 = end;
+
+                    let new_outline = (start..=end).map(|x_index| (x_index, position_index.1));
+                    outline.extend(new_outline.clone());
+                    inside_boundary.extend(inside(new_outline, turn, instruction.dir));
+                },
+                L => {
+                    position.0 -= instruction.distance;
+                    let start = position_index.0;
+                    let end = start - x_sections[0..=position_index.0].iter().rev()
+                        .position(|r| *r == (position.0, position.0)).unwrap();
+                    position_index.0 = end;
+
+                    let new_outline = (end..=start).map(|x_index| (x_index, position_index.1));
+                    outline.extend(new_outline.clone());
+                    inside_boundary.extend(inside(new_outline, turn, instruction.dir));
+                },
+                D => {
+                    position.1 += instruction.distance;
+                    let start = position_index.1;
+                    let end = start + y_sections[position_index.1..].iter()
+                        .position(|r| *r == (position.1, position.1)).unwrap();
+                    position_index.1 = end;
+
+                    let new_outline = (start..=end).map(|y_index| (position_index.0, y_index));
+                    outline.extend(new_outline.clone());
+                    inside_boundary.extend(inside(new_outline, turn, instruction.dir));
+                },
+                U => {
+                    position.1 -= instruction.distance;
+                    let start = position_index.1;
+                    let end = start - y_sections[0..=position_index.1].iter().rev()
+                        .position(|r| *r == (position.1, position.1)).unwrap();
+                    position_index.1 = end;
+
+                    let new_outline = (end..=start).map(|y_index| (position_index.0, y_index));
+                    outline.extend(new_outline.clone());
+                    inside_boundary.extend(inside(new_outline, turn, instruction.dir));
+                },
+            }
+        }
+
+        // flood-fill the pit, still working in grid ranges
+        let mut pit = outline;
+        let mut to_fill = inside_boundary;
+        while !to_fill.is_empty() {
+            let pos = *to_fill.iter().next().unwrap();
+            to_fill.remove(&pos);
+            let new = pit.insert(pos);
+            if new {
+                [(0, 1), (0, -1), (-1, 0), (1, 0)].into_iter().for_each(|(dx, dy)| {
+                    let next_pos = (
+                        (pos.0 as isize + dx as isize) as usize,
+                        (pos.1 as isize + dy as isize) as usize
+                    );
+                    if !pit.contains(&next_pos) {
+                        to_fill.insert(next_pos);
+                    }
+                })
+            }
+        }
+
+        pit.into_iter().map(|(x, y)| {
+            let x_range = x_sections[x];
+            let y_range = y_sections[y];
+            (x_range.1 - x_range.0 + 1) as usize * (y_range.1 - y_range.0 + 1) as usize
+        }).sum()
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let answer = dig_big_pit(&self.plain_instructions);
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let answer = dig_big_pit(&self.hex_instructions);
+
+            Box::new(answer)
+        }
+    }
+}
+
