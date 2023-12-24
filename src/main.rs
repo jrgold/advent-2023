@@ -15,7 +15,7 @@ mod day {
 }
 
 fn main() {
-    let day_number = 18;
+    let day_number = 19;
 
     let day: &dyn Day = match day_number {
         1 => &day_01::Day01{},
@@ -33,6 +33,7 @@ fn main() {
         14 => &day_14::Day14{},
         17 => &day_17::Day17{},
         18 => &day_18::Day18{},
+        19 => &day_19::Day19{},
         _ => unimplemented!(),
     };
 
@@ -1745,7 +1746,7 @@ mod day_17 {
 }
 
 mod day_18 {
-    use std::collections::{BTreeSet, HashMap, HashSet};
+    use std::collections::{BTreeSet, HashSet};
     use std::fmt::Display;
     use std::str::FromStr;
     use regex::Regex;
@@ -2004,3 +2005,255 @@ mod day_18 {
     }
 }
 
+mod day_19 {
+    use std::cell::OnceCell;
+    use std::cmp::Ordering;
+    use std::collections::HashMap;
+    use std::fmt::{Debug, Display, Formatter, Write};
+    use std::str::FromStr;
+    use regex::Regex;
+    use crate::day::{Day, Solution};
+    use crate::day_19::FinalOutcome::Accept;
+    use crate::day_19::Rule::{AlwaysOutcome, ConditionalOutcome};
+    use crate::day_19::RuleOutcome::{OtherWorkflow, Finish};
+
+    pub struct Day19;
+
+    type Ratings = [i32; 4];
+
+    #[derive(PartialEq, Eq, Hash, Clone, Copy)]
+    struct WorkflowId(i32);
+
+    impl FromStr for WorkflowId {
+        type Err = ();
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            Ok(WorkflowId(s.chars()
+                .map(|c| c as i32 - 'a' as i32)
+                .enumerate()
+                .map(|(i, c)| 26i32.pow(i as u32) * c)
+                .sum()))
+        }
+    }
+
+    impl Debug for WorkflowId {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            let mut x = self.0;
+            while x != 0 {
+                let c = x % 26;
+                f.write_char((c + 'a' as i32) as u8 as char).unwrap();
+                x /= 26;
+            }
+            return Ok(());
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum FinalOutcome {
+        Accept,
+        Reject,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum RuleOutcome {
+        Finish(FinalOutcome),
+        OtherWorkflow(WorkflowId),
+    }
+
+    impl FromStr for RuleOutcome {
+        type Err = ();
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            match s {
+                "A" => Ok(Finish(FinalOutcome::Accept)),
+                "R" => Ok(Finish(FinalOutcome::Reject)),
+                _ if s.chars().all(|c| c.is_lowercase()) => Ok(OtherWorkflow(s.parse().unwrap())),
+                _ => Err(()),
+            }
+        }
+    }
+
+    #[derive(Debug)]
+    enum Rule {
+        AlwaysOutcome(RuleOutcome),
+        ConditionalOutcome {
+            index: usize,
+            comparison: Ordering,
+            threshold: i32,
+            outcome: RuleOutcome,
+        },
+    }
+
+    const RULE_REGEX: OnceCell<Regex> = OnceCell::new();
+
+    impl FromStr for Rule {
+        type Err = ();
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let regex_cell = RULE_REGEX;
+            let regex = regex_cell.get_or_init(|| Regex::new("^([xmas])([<>])([0-9]+):(A|R|[a-z]+)$").unwrap());
+            Ok(match regex.captures(s) {
+                None => AlwaysOutcome(s.parse().unwrap()),
+                Some(captures) => ConditionalOutcome {
+                    index: match captures.get(1).unwrap().as_str() {
+                        "x" => 0,
+                        "m" => 1,
+                        "a" => 2,
+                        "s" => 3,
+                        _   => panic!(),
+                    },
+                    comparison: if captures.get(2).unwrap().as_str() == "<" { Ordering::Less } else { Ordering::Greater },
+                    threshold: captures.get(3).unwrap().as_str().parse().unwrap(),
+                    outcome: captures.get(4).unwrap().as_str().parse().unwrap(),
+                }
+            })
+        }
+    }
+
+    struct Input {
+        workflows: HashMap<WorkflowId, Vec<Rule>>,
+        parts: Vec<Ratings>,
+    }
+
+    impl Day for Day19 {
+        fn process_input(&self, input: &str) -> Box<dyn Solution> {
+            let (workflows_input, parts_input) = input.split_once("\n\n").unwrap();
+
+            let name_and_rules_regex = Regex::new("^([^{]*)\\{([^}]*)}$").unwrap();
+            let workflows = workflows_input.lines()
+                .map(|line| {
+                    let name_and_rules_captures = name_and_rules_regex.captures(line).unwrap();
+                    let id = name_and_rules_captures.get(1).unwrap().as_str().parse().unwrap();
+                    let rules_strings = name_and_rules_captures.get(2).unwrap().as_str().split(",");
+                    (id, rules_strings.map(|s| s.parse().unwrap()).collect())
+                }).collect();
+
+            let ratings_regex = Regex::new("^\\{x=([0-9]*),m=([0-9]*),a=([0-9]*),s=([0-9]*)}$").unwrap();
+            let parts = parts_input.lines()
+                .map(|line| {
+                    let ratings_captures = ratings_regex.captures(line).unwrap();
+                    [
+                        ratings_captures.get(1).unwrap().as_str().parse().unwrap(),
+                        ratings_captures.get(2).unwrap().as_str().parse().unwrap(),
+                        ratings_captures.get(3).unwrap().as_str().parse().unwrap(),
+                        ratings_captures.get(4).unwrap().as_str().parse().unwrap(),
+                    ]
+                }).collect();
+
+            Box::new(Input {
+                workflows,
+                parts,
+            })
+        }
+    }
+
+    fn apply(workflows: &HashMap<WorkflowId, Vec<Rule>>, mut workflow: WorkflowId, ratings: Ratings) -> FinalOutcome {
+        'next_workflow: loop {
+            for rule in &workflows[&workflow] {
+                match rule {
+                    AlwaysOutcome(Finish(outcome)) => return *outcome,
+                    AlwaysOutcome(OtherWorkflow(next_workflow)) => {
+                        workflow = *next_workflow;
+                        continue 'next_workflow;
+                    },
+                    ConditionalOutcome { index, comparison, threshold, outcome } => {
+                        if (ratings[*index]).cmp(threshold) == *comparison {
+                            match outcome {
+                                Finish(outcome) => return *outcome,
+                                OtherWorkflow(next_workflow) => {
+                                    workflow = *next_workflow;
+                                    continue 'next_workflow;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn break_ranges(ranges: [(i32, i32); 4], index: usize, comparison: Ordering, threshold: i32) -> (Option<[(i32, i32); 4]>, Option<[(i32, i32); 4]>) {
+        let splitting: (i32, i32) = ranges[index];
+        let (accepted, rejected) = if comparison == Ordering::Less {
+            if splitting.1 < threshold {
+                (Some(splitting), None)
+            } else if splitting.0 >= threshold {
+                (None, Some(splitting))
+            } else {
+                (Some((splitting.0, threshold - 1)), Some((threshold, splitting.1)))
+            }
+        } else {
+            if splitting.0 > threshold {
+                (Some(splitting), None)
+            } else if splitting.1 <= threshold {
+                (None, Some(splitting))
+            } else {
+                (Some((threshold + 1, splitting.1)), Some((splitting.0, threshold)))
+            }
+        };
+
+        let accepted_ranges = accepted.map(|range| {
+            let mut r = ranges.clone();
+            r[index] = range;
+            r
+        });
+        let rejected_ranges = rejected.map(|range| {
+            let mut r = ranges.clone();
+            r[index] = range;
+            r
+        });
+
+        (accepted_ranges, rejected_ranges)
+    }
+
+    fn final_outcome_combinations(outcome: FinalOutcome, ranges: [(i32, i32); 4]) -> u64 {
+        match outcome {
+            FinalOutcome::Accept => ranges.iter()
+                .map(|r| (r.1 - r.0 + 1) as u64)
+                .product(),
+            FinalOutcome::Reject => 0,
+        }
+    }
+
+    fn accepted_combinations(workflows: &HashMap<WorkflowId, Vec<Rule>>, rules: &[Rule], ranges: [(i32, i32); 4]) -> u64 {
+        match &rules[0] {
+            AlwaysOutcome(Finish(outcome)) => final_outcome_combinations(*outcome, ranges),
+            AlwaysOutcome(OtherWorkflow(next_workflow)) => accepted_combinations(workflows, &workflows[next_workflow], ranges),
+            ConditionalOutcome { index, comparison, threshold, outcome } => {
+                let (accepted, rejected) = break_ranges(ranges, *index, *comparison, *threshold);
+                let rejects = rejected.map_or(0, |rejected| accepted_combinations(workflows, &rules[1..], rejected.clone()));
+                let accepts = accepted.map_or(0, |accepted| match outcome {
+                    Finish(outcome) => final_outcome_combinations(*outcome, accepted),
+                    OtherWorkflow(next_workflow) => accepted_combinations(workflows, &workflows[next_workflow], accepted),
+                });
+                accepts + rejects
+            }
+        }
+    }
+
+    impl Solution for Input {
+        fn part_1(&self) -> Box<dyn Display> {
+            let answer: i32 = self.parts.iter()
+                .filter(|ratings| apply(&self.workflows, "in".parse().unwrap(), **ratings) == Accept)
+                .map(|ratings| ratings.iter().sum::<i32>())
+                .sum();
+
+            Box::new(answer)
+        }
+
+        fn part_2(&self) -> Box<dyn Display> {
+            let answer = accepted_combinations(
+                &self.workflows,
+                self.workflows.get(&"in".parse().unwrap()).unwrap(),
+                [
+                    (1, 4000),
+                    (1, 4000),
+                    (1, 4000),
+                    (1, 4000),
+                ]
+            );
+
+            Box::new(answer)
+        }
+    }
+}
